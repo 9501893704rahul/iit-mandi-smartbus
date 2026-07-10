@@ -6,7 +6,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import {
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getFirestore,
@@ -31,33 +30,84 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const TOTAL_SEATS = 30;
-const MAX_SEATS_PER_BOOKING = 4;
+const MAX_SEATS_PER_BOOKING = 2;
 const selectedSeats = new Set();
 const bookingsByTrip = new Map();
 const loadedTrips = new Set();
 const liveUnsubscribers = [];
+const bookingUnsubscribers = new Map();
 const serviceDate = indiaDateKey();
 
 let firebaseUser = null;
 let activeUser = null;
+let scheduleLoaded = false;
+let scheduleDocuments = [];
 
-function campusTrips(prefix) {
+function rollingTrips(prefix) {
+  return nextDepartureSlots().map(slot => ({
+    id: `${prefix}-${slot.key}`,
+    time: slot.label,
+    bus: "BUS(F)",
+    capacity: TOTAL_SEATS,
+    running: true,
+    isExtra: false
+  }));
+}
+
+function buildBaseRoutes() {
   return [
-    { id: `${prefix}-0115`, time: "01:15 PM", bus: "BUS(F)", capacity: TOTAL_SEATS, running: true },
-    { id: `${prefix}-0130`, time: "01:30 PM", bus: "BUS(F)", capacity: TOTAL_SEATS, running: false },
-    { id: `${prefix}-0145`, time: "01:45 PM", bus: "BUS(F)", capacity: TOTAL_SEATS, running: true }
+    { id: "north-to-south", name: "North Campus -To- South Campus", trips: rollingTrips("ns") },
+    { id: "south-to-north", name: "South Campus -To- North Campus", trips: rollingTrips("sn") }
   ];
 }
 
-const data = {
-  routes: [
-    { id: "north-to-south", name: "North Campus -To- South Campus", trips: campusTrips("ns") },
-    { id: "south-to-north", name: "South Campus -To- North Campus", trips: campusTrips("sn") }
-  ]
-};
+let baseRoutes = buildBaseRoutes();
 
-const allTrips = data.routes.flatMap(route => route.trips);
+const data = { routes: cloneBaseRoutes() };
+let allTrips = data.routes.flatMap(route => route.trips);
 allTrips.forEach(trip => bookingsByTrip.set(trip.id, []));
+
+function cloneBaseRoutes() {
+  return baseRoutes.map(route => ({
+    ...route,
+    trips: route.trips.map(trip => ({ ...trip }))
+  }));
+}
+
+function nextDepartureSlots() {
+  const now = indiaTimeParts();
+  const current = now.hour * 60 + now.minute + now.second / 60;
+  const candidates = [];
+  for (let dayOffset = 0; dayOffset <= 1; dayOffset += 1) {
+    for (let hour = 0; hour < 24; hour += 1) {
+      for (const minute of [15, 30, 45]) {
+        const absolute = dayOffset * 1440 + hour * 60 + minute;
+        if (absolute > current) candidates.push({ hour, minute, absolute });
+      }
+    }
+  }
+  return candidates.slice(0, 3).map(value => ({
+    key: `${String(value.hour).padStart(2, "0")}${String(value.minute).padStart(2, "0")}`,
+    label: formatClockTime(value.hour, value.minute)
+  }));
+}
+
+function indiaTimeParts() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return { hour: Number(value.hour), minute: Number(value.minute), second: Number(value.second) };
+}
+
+function formatClockTime(hour, minute) {
+  const suffix = hour >= 12 ? "PM" : "AM";
+  return `${String(hour % 12 || 12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
 
 const routeSelect = document.getElementById("routeSelect");
 const timingSelect = document.getElementById("timingSelect");
@@ -390,14 +440,27 @@ async function bookSeats() {
   if (names.some(name => name.length > 80)) return showMessage("Passenger names must be 80 characters or fewer.", "red");
 
   const refs = seats.map(seatNo => bookingDocRef(trip, seatNo));
+  const reservationRef = reservationDocRef(trip, firebaseUser.uid);
   try {
     bookBtn.disabled = true;
     bookBtn.textContent = "Confirming…";
     await runTransaction(db, async transaction => {
+      const reservationSnapshot = await transaction.get(reservationRef);
+      const existingSeats = reservationSnapshot.exists() ? reservationSnapshot.data().seats || [] : [];
+      const requestedSeats = seats.map(String);
+      const combinedSeats = [...new Set([...existingSeats, ...requestedSeats])];
+      if (combinedSeats.length > MAX_SEATS_PER_BOOKING) throw new Error("TRIP_LIMIT");
+
       const snapshots = [];
       for (const ref of refs) snapshots.push(await transaction.get(ref));
       const taken = snapshots.map((snapshot, index) => snapshot.exists() ? seats[index] : null).filter(Boolean);
       if (taken.length) throw new Error(`SEAT_TAKEN:${taken.join(",")}`);
+
+      transaction.set(reservationRef, {
+        ownerUid: firebaseUser.uid,
+        seats: combinedSeats,
+        updatedAt: serverTimestamp()
+      });
 
       refs.forEach((ref, index) => transaction.set(ref, {
         ownerUid: firebaseUser.uid,
@@ -425,6 +488,8 @@ async function bookSeats() {
     if (error.message.startsWith("SEAT_TAKEN:")) {
       const seatsTaken = error.message.split(":")[1];
       showMessage(`Seat ${seatsTaken} was just booked by someone else. Please select another seat.`, "red");
+    } else if (error.message === "TRIP_LIMIT") {
+      showMessage("You can hold a maximum of 2 seats for this timing. Cancel an existing seat before booking another.", "red");
     } else {
       showMessage("Booking could not be confirmed. Check your internet connection and try again.", "red");
     }
@@ -442,7 +507,18 @@ async function cancelLatestBooking() {
   const latest = ownBookings[0];
   if (!latest) return showStatusMessage("No active booking from this device was found for the selected bus.", "red");
   try {
-    await deleteDoc(latest._ref);
+    const reservationRef = reservationDocRef(getTrip(), firebaseUser.uid);
+    await runTransaction(db, async transaction => {
+      const reservationSnapshot = await transaction.get(reservationRef);
+      transaction.delete(latest._ref);
+      if (!reservationSnapshot.exists()) return;
+      const remaining = (reservationSnapshot.data().seats || []).filter(seat => seat !== String(latest.seatNo));
+      if (remaining.length) {
+        transaction.set(reservationRef, { ownerUid: firebaseUser.uid, seats: remaining, updatedAt: serverTimestamp() });
+      } else {
+        transaction.delete(reservationRef);
+      }
+    });
     showStatusMessage(`Cancelled Seat ${latest.seatNo} for ${latest.passengerName}.`, "green");
   } catch (error) {
     console.error(error);
@@ -469,34 +545,120 @@ function bookingDocRef(trip, seatNo) {
   return doc(db, "services", serviceDate, "trips", trip.id, "bookings", String(seatNo));
 }
 
+function reservationDocRef(trip, uid) {
+  return doc(db, "services", serviceDate, "trips", trip.id, "reservations", uid);
+}
+
 function tripBookingsCollection(trip) {
   return collection(db, "services", serviceDate, "trips", trip.id, "bookings");
 }
 
 function startRealtimeListeners() {
   setConnectionState("connecting", "Syncing seats…");
-  allTrips.forEach(trip => {
-    const unsubscribe = onSnapshot(tripBookingsCollection(trip), snapshot => {
-      const bookings = snapshot.docs.map(item => ({ id: item.id, _ref: item.ref, ...item.data() }));
-      bookingsByTrip.set(trip.id, bookings);
-      loadedTrips.add(trip.id);
-      const reservedNow = new Set(bookings.map(item => Number(item.seatNo)));
-      [...selectedSeats].forEach(seatNo => {
-        if (trip.id === getTrip().id && reservedNow.has(seatNo)) selectedSeats.delete(seatNo);
-      });
-      if (loadedTrips.size === allTrips.length) {
-        setConnectionState("live", "Live • Real-time");
-        openBookingBtn.disabled = false;
-      }
-      renderAll();
-    }, error => {
-      console.error(error);
-      setConnectionState("offline", "Connection error");
-      openBookingBtn.disabled = true;
-      showStatusMessage("Seat data could not be loaded. Check Firestore Rules and internet connection.", "red");
+  allTrips.forEach(ensureBookingListener);
+
+  const unsubscribe = onSnapshot(
+    collection(db, "services", serviceDate, "trips"),
+    applyScheduleSnapshot,
+    handleRealtimeError
+  );
+  liveUnsubscribers.push(unsubscribe);
+}
+
+function ensureBookingListener(trip) {
+  if (bookingUnsubscribers.has(trip.id)) return;
+  const unsubscribe = onSnapshot(tripBookingsCollection(trip), snapshot => {
+    const bookings = snapshot.docs.map(item => ({ id: item.id, _ref: item.ref, ...item.data() }));
+    bookingsByTrip.set(trip.id, bookings);
+    loadedTrips.add(trip.id);
+    const reservedNow = new Set(bookings.map(item => Number(item.seatNo)));
+    [...selectedSeats].forEach(seatNo => {
+      if (trip.id === getTrip().id && reservedNow.has(seatNo)) selectedSeats.delete(seatNo);
     });
-    liveUnsubscribers.push(unsubscribe);
+    updateLiveState();
+    renderAll();
+  }, handleRealtimeError);
+  bookingUnsubscribers.set(trip.id, unsubscribe);
+  liveUnsubscribers.push(unsubscribe);
+}
+
+function applyScheduleSnapshot(snapshot) {
+  scheduleDocuments = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+  rebuildRoutesFromSchedule();
+}
+
+function rebuildRoutesFromSchedule() {
+  const previousRouteId = routeSelect.value;
+  const previousTripId = timingSelect.value;
+  baseRoutes = buildBaseRoutes();
+  const nextRoutes = cloneBaseRoutes();
+
+  scheduleDocuments.forEach(config => {
+    const route = nextRoutes.find(candidate => candidate.id === config.routeId);
+    if (!route) return;
+    const existing = route.trips.find(trip => trip.id === config.id);
+    const values = {
+      id: config.id,
+      time: String(config.time || "Extra Time").slice(0, 20),
+      bus: String(config.bus || "BUS(F)").slice(0, 40),
+      capacity: Math.min(TOTAL_SEATS, Math.max(1, Number(config.capacity) || TOTAL_SEATS)),
+      running: Boolean(config.running),
+      isExtra: Boolean(config.isExtra)
+    };
+    if (existing) Object.assign(existing, values);
+    else if (values.isExtra && isFutureTrip(values.time)) route.trips.push(values);
   });
+
+  data.routes = nextRoutes;
+  allTrips = data.routes.flatMap(route => route.trips);
+  const currentIds = new Set(allTrips.map(trip => trip.id));
+
+  for (const [tripId, unsubscribe] of bookingUnsubscribers.entries()) {
+    if (!currentIds.has(tripId)) {
+      unsubscribe();
+      bookingUnsubscribers.delete(tripId);
+      bookingsByTrip.delete(tripId);
+      loadedTrips.delete(tripId);
+    }
+  }
+
+  allTrips.forEach(trip => {
+    if (!bookingsByTrip.has(trip.id)) bookingsByTrip.set(trip.id, []);
+    ensureBookingListener(trip);
+  });
+
+  renderRouteOptions();
+  if (data.routes.some(route => route.id === previousRouteId)) routeSelect.value = previousRouteId;
+  renderTimingOptions();
+  if (getRoute().trips.some(trip => trip.id === previousTripId)) timingSelect.value = previousTripId;
+  scheduleLoaded = true;
+  updateLiveState();
+  renderAll();
+}
+
+function isFutureTrip(time) {
+  const match = String(time).match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!match) return true;
+  let hour = Number(match[1]) % 12;
+  if (match[3].toUpperCase() === "PM") hour += 12;
+  const target = hour * 60 + Number(match[2]);
+  const now = indiaTimeParts();
+  return target > now.hour * 60 + now.minute;
+}
+
+function updateLiveState() {
+  const baseIds = baseRoutes.flatMap(route => route.trips.map(trip => trip.id));
+  if (scheduleLoaded && baseIds.every(tripId => loadedTrips.has(tripId))) {
+    setConnectionState("live", "Live • Real-time");
+    openBookingBtn.disabled = false;
+  }
+}
+
+function handleRealtimeError(error) {
+  console.error(error);
+  setConnectionState("offline", "Connection error");
+  openBookingBtn.disabled = true;
+  showStatusMessage("Seat or schedule data could not be loaded. Check Firestore Rules and internet connection.", "red");
 }
 
 async function loadProfile() {
@@ -605,5 +767,20 @@ bookBtn.addEventListener("click", bookSeats);
 document.getElementById("cancelMyBookingBtn").addEventListener("click", cancelLatestBooking);
 document.getElementById("exportBtn").addEventListener("click", exportCSV);
 window.addEventListener("beforeunload", () => liveUnsubscribers.forEach(unsubscribe => unsubscribe()));
+
+let rollingWindowKey = nextDepartureSlots().map(slot => slot.key).join("-");
+setInterval(() => {
+  if (indiaDateKey() !== serviceDate) {
+    window.location.reload();
+    return;
+  }
+  const nextKey = nextDepartureSlots().map(slot => slot.key).join("-");
+  if (nextKey !== rollingWindowKey) {
+    rollingWindowKey = nextKey;
+    selectedSeats.clear();
+    bookingBox.classList.add("hidden");
+    rebuildRoutesFromSchedule();
+  }
+}, 30000);
 
 boot();

@@ -18,6 +18,7 @@
         <span id="connectionBadge" class="connection-badge connecting">Connecting…</span>
         <span id="activeUserBadge" class="user-badge hidden"></span>
         <button id="changeUserBtn" class="btn light hidden">Change User</button>
+        <a href="admin.html" class="btn light admin-link">Admin Login</a>
       </div>
     </header>
 
@@ -59,7 +60,7 @@
         <button id="autoSelectBtn" class="btn light">Auto Select Next Seat</button>
         <button id="clearSelectionBtn" class="btn light">Clear Selection</button>
         <button id="cancelMyBookingBtn" class="btn light hidden">Cancel My Latest Booking</button>
-        <button id="exportBtn" class="btn light">Export CSV</button>
+        <button id="exportBtn" class="btn light hidden" aria-hidden="true">Export CSV</button>
       </div>
     </main>
 
@@ -140,7 +141,7 @@
       </div>
     </section>
 
-    <section class="box">
+    <section class="box hidden" aria-hidden="true">
       <div class="section-head">
         <h2>All Bus Status</h2>
       </div>

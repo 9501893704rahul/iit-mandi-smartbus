@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IIT Mandi SmartBus Portal</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div>
+        <h1>IIT Mandi SmartBus Portal</h1>
+        <div class="top-warning">Don’t come to the bus stop unless your seat is confirmed. Save your time and others’ time too.</div>
+        <p>Live vacant seat status and seat booking for North Campus ↔ South Campus shuttle.</p>
+      </div>
+      <div class="top-actions">
+        <span id="connectionBadge" class="connection-badge connecting">Connecting…</span>
+        <span id="activeUserBadge" class="user-badge hidden"></span>
+        <button id="changeUserBtn" class="btn light hidden">Change User</button>
+      </div>
+    </header>
+
+    <main class="oas-panel">
+      <div class="field-block full">
+        <label for="routeSelect">Route</label>
+        <select id="routeSelect"></select>
+      </div>
+
+      <div class="split-fields">
+        <div class="field-block">
+          <label for="timingSelect">Timing</label>
+          <select id="timingSelect"></select>
+        </div>
+        <div class="field-block">
+          <label for="busSelect">Bus</label>
+          <select id="busSelect" disabled>
+            <option>BUS(F)</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="seatSummary" class="seat-summary"></div>
+      <div id="runningInfo" class="running-info"></div>
+
+      <section class="seat-area" aria-label="Bus seat layout">
+        <div id="seatMap" class="bus-layout"></div>
+      </section>
+
+      <div class="legend">
+        <span class="legend-item available">Seat Available</span>
+        <span class="legend-item reserved">Seat Reserved</span>
+        <span class="legend-item selected">Selected Now</span>
+        <span class="legend-item blocked">Not Available for Reservation</span>
+      </div>
+
+      <div class="status-actions">
+        <button id="openBookingBtn" class="btn primary" disabled>Book Selected Seat</button>
+        <button id="autoSelectBtn" class="btn light">Auto Select Next Seat</button>
+        <button id="clearSelectionBtn" class="btn light">Clear Selection</button>
+        <button id="cancelMyBookingBtn" class="btn light hidden">Cancel My Latest Booking</button>
+        <button id="exportBtn" class="btn light">Export CSV</button>
+      </div>
+    </main>
+
+    <section id="registerBox" class="box hidden">
+      <div class="section-head">
+        <h2>First Time Registration</h2>
+        <button id="closeRegisterBtn" class="btn light">Close</button>
+      </div>
+      <p class="form-note">Only minimal details are required before first booking.</p>
+      <div class="grid three">
+        <div class="form-row">
+          <label for="userType">User Type</label>
+          <select id="userType">
+            <option>Student</option>
+            <option>PhD Scholar</option>
+            <option>Intern</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="regName">Name</label>
+          <input id="regName" type="text" placeholder="Rahul" />
+        </div>
+        <div id="rollNoRow" class="form-row">
+          <label for="rollNo">Roll No</label>
+          <input id="rollNo" type="text" placeholder="D23241" />
+        </div>
+        <div id="internIdRow" class="form-row hidden">
+          <label for="internId">Intern ID <span class="muted-text">optional</span></label>
+          <input id="internId" type="text" placeholder="INT-001" />
+        </div>
+        <div class="form-row">
+          <label for="regEmail">Email</label>
+          <input id="regEmail" type="email" placeholder="name@students.iitmandi.ac.in" />
+        </div>
+      </div>
+      <div class="button-row">
+        <button id="saveRegistrationBtn" class="btn primary">Save Registration & Continue</button>
+      </div>
+      <p id="registerMessage" class="message"></p>
+      <p class="privacy-note">Your email and Roll No are stored in your private profile and are not shown in the passenger list.</p>
+    </section>
+
+    <section id="bookingBox" class="box hidden">
+      <div class="section-head">
+        <h2>Confirm Booking</h2>
+        <button id="closeBookingBtn" class="btn light">Close</button>
+      </div>
+      <div id="bookingUserInfo" class="summary-line small-summary"></div>
+      <div class="form-row">
+        <label for="passengerNames">Passenger Name(s)</label>
+        <textarea id="passengerNames" rows="3" placeholder="One passenger name per selected seat"></textarea>
+        <small>Selected seat count and passenger count should match. One passenger per line.</small>
+      </div>
+      <div class="button-row">
+        <button id="bookBtn" class="btn primary">Confirm Seat Booking</button>
+      </div>
+      <p id="message" class="message"></p>
+    </section>
+
+    <section class="box passenger-box">
+      <div class="section-head">
+        <h2>Passenger List</h2>
+        <span id="todayText"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="passenger-table">
+          <thead>
+            <tr>
+              <th>Seat No</th>
+              <th>Passenger Name</th>
+              <th>Booked By</th>
+              <th>Role</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="passengerTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="box">
+      <div class="section-head">
+        <h2>All Bus Status</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Route</th>
+              <th>Timing</th>
+              <th>Bus</th>
+              <th>Total Seat</th>
+              <th>Reserved</th>
+              <th>Available</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="statusTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="box info-box">
+      <h2>Important</h2>
+      <p class="hint">A blue seat is available. A green seat is already booked. A yellow seat is selected but is not confirmed until the confirmation message appears.</p>
+    </section>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

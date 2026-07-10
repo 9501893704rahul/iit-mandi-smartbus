@@ -757,7 +757,6 @@ timingSelect.addEventListener("change", () => {
 seatMap.addEventListener("click", handleSeatClick);
 userTypeSelect.addEventListener("change", updateRegistrationFields);
 openBookingBtn.addEventListener("click", openBookingFlow);
-document.getElementById("autoSelectBtn").addEventListener("click", autoSelectNextSeat);
 document.getElementById("clearSelectionBtn").addEventListener("click", clearSelection);
 document.getElementById("saveRegistrationBtn").addEventListener("click", saveRegistration);
 document.getElementById("closeRegisterBtn").addEventListener("click", () => registerBox.classList.add("hidden"));

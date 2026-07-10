@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartBus Admin | IIT Mandi</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <div class="page admin-page">
+    <header class="topbar">
+      <div>
+        <h1>SmartBus Admin Panel</h1>
+        <div class="top-warning">Transport controls are restricted to the approved Google account.</div>
+        <p>Manage today’s North Campus ⇄ South Campus shuttle service.</p>
+      </div>
+      <div class="top-actions">
+        <span id="adminUserBadge" class="user-badge hidden"></span>
+        <a href="index.html" class="btn light admin-link">Student Portal</a>
+        <button id="signOutBtn" class="btn light hidden">Sign Out</button>
+      </div>
+    </header>
+
+    <section id="authSection" class="box auth-card">
+      <h2>Admin Sign In</h2>
+      <p>Use the Google account approved in Firestore Security Rules.</p>
+      <button id="loginBtn" class="btn primary google-btn">Sign in with Google</button>
+      <p id="authMessage" class="message"></p>
+    </section>
+
+    <main id="adminPanel" class="hidden">
+      <section class="box">
+        <div class="section-head">
+          <h2>Today’s Schedule</h2>
+          <span id="serviceDateText" class="date-chip"></span>
+        </div>
+        <div class="button-row">
+          <button id="vacationBtn" class="btn light">Apply Vacation Schedule</button>
+          <button id="regularBtn" class="btn primary">Apply Regular Schedule</button>
+        </div>
+        <p class="hint admin-hint">Vacation: 1:30 PM not running. Regular: 1:15, 1:30 and 1:45 PM running.</p>
+      </section>
+
+      <section class="box">
+        <h2>Selected Bus Control</h2>
+        <div class="admin-grid two-col">
+          <div class="form-row">
+            <label for="adminRouteSelect">Route</label>
+            <select id="adminRouteSelect"></select>
+          </div>
+          <div class="form-row">
+            <label for="adminTripSelect">Timing / Bus</label>
+            <select id="adminTripSelect"></select>
+          </div>
+        </div>
+        <div id="adminTripSummary" class="summary-line"></div>
+        <div class="button-row">
+          <button id="toggleRunningBtn" class="btn primary">Toggle Running Status</button>
+          <button id="exportAdminBtn" class="btn light">Export Passenger CSV</button>
+        </div>
+      </section>
+
+      <section class="box">
+        <h2>Add Extra Bus</h2>
+        <div class="admin-grid three-col">
+          <div class="form-row">
+            <label for="extraRoute">Route</label>
+            <select id="extraRoute"></select>
+          </div>
+          <div class="form-row">
+            <label for="extraTime">Departure Time</label>
+            <input id="extraTime" type="time" value="13:20">
+          </div>
+          <div class="form-row">
+            <label for="extraBusName">Bus Name</label>
+            <input id="extraBusName" type="text" value="Extra BUS(F)" maxlength="40">
+          </div>
+        </div>
+        <button id="addExtraBusBtn" class="btn primary">Add Extra Bus</button>
+      </section>
+
+      <section class="box">
+        <h2>All Bus Status</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Route</th><th>Timing</th><th>Bus</th><th>Capacity</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody id="adminTripsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="box">
+        <div class="section-head">
+          <h2 id="adminBookingsTitle">Passenger Bookings</h2>
+          <span id="bookingCount" class="date-chip">0 booked</span>
+        </div>
+        <div class="table-wrap">
+          <table class="passenger-table">
+            <thead>
+              <tr><th>Seat</th><th>Passenger</th><th>Booked By</th><th>Role</th><th>Action</th></tr>
+            </thead>
+            <tbody id="adminBookingsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <p id="adminMessage" class="admin-toast" aria-live="polite"></p>
+    </main>
+  </div>
+
+  <script type="module" src="admin.js"></script>
+</body>
+</html>
